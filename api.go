@@ -46,7 +46,7 @@ func main() {
 // TODO: go back thru and refactor all error responses to use c.Error, like below?
 
 func listAllHaikus(c *gin.Context) {
-	_, _, err := util.ValidateLimitAndSkip(c)
+	limit, skip, err := util.ValidateLimitAndSkip(c)
 	if err != nil {
 		c.Error(err)
 		c.JSON(types.HTTP_BAD, c.Errors.JSON())
@@ -59,7 +59,7 @@ func listAllHaikus(c *gin.Context) {
 	conn := getPostgresConn()
 	defer conn.Close(ctx.Background())
 
-	rows, err := conn.Query(ctx.Background(), sql)
+	rows, err := conn.Query(ctx.Background(), sql, limit, skip)
 	if err != nil {
 		fmt.Println("list all failed", err)
 		return
@@ -212,11 +212,10 @@ func deleteHaikuById(c *gin.Context) {
 }
 
 func getPostgresConn() *pgx.Conn {
-	connectionStr := os.Getenv("POSTGRES_CONNECTION_STR")
-	conn, err := pgx.Connect(ctx.Background(), connectionStr)
+	databaseUrl := os.Getenv("DATABASE_URL")
+	conn, err := pgx.Connect(ctx.Background(), databaseUrl)
 	if err != nil {
-		fmt.Println("types.HTTP_BAD things happened!")
-		fmt.Println(err)
+		fmt.Println("FDSAA")
 	}
 
 	return conn

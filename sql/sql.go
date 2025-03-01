@@ -10,7 +10,8 @@ RETURNING *`
 func ListAllHaikus() string {
 	return `
 SELECT * FROM public.haikus
-ORDER BY "ID" ASC`
+ORDER BY "ID" ASC
+LIMIT ($1) OFFSET ($2)`
 }
 
 func GetHaikuById() string {
