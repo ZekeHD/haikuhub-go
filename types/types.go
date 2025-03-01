@@ -22,6 +22,22 @@ type Haiku struct {
 	AuthorID string
 }
 
+type ListHaikusPOST struct {
+	Limit int `json:"limit" binding:"required"`
+	Skip  int `json:"skip" binding:"required"`
+}
+
+type RegisterAuthorPOST struct {
+	Username string `json:"username" binding:"required"`
+	Password string `json:"password" binding:"required"`
+	Email    string `json:"email" binding:"required"`
+}
+
+type HaikuPUT struct {
+	Text string `json:"text" binding:"required"`
+	Tags string `json:"tags"`
+}
+
 const HTTP_OK = http.StatusOK
 const HTTP_BAD = http.StatusBadRequest
 const HTTP_UNAUTHORIZED = http.StatusUnauthorized

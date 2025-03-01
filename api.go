@@ -13,6 +13,7 @@ import (
 	auth "haikuhub.net/haikuhubapi/auth"
 	haikusSQL "haikuhub.net/haikuhubapi/sql"
 	"haikuhub.net/haikuhubapi/types"
+	"haikuhub.net/haikuhubapi/util"
 
 	"regexp"
 
@@ -31,7 +32,7 @@ func main() {
 
 	r := gin.Default()
 
-	r.GET("/allHaikus", listAllHaikus)
+	r.POST("/allHaikus", listAllHaikus)
 	r.GET("/haiku/:id", getHaikuById)
 	r.PUT("/haiku", putHaiku)
 	r.DELETE("/haiku/:id", deleteHaikuById)
@@ -42,7 +43,17 @@ func main() {
 	r.Run()
 }
 
+// TODO: go back thru and refactor all error responses to use c.Error, like below?
+
 func listAllHaikus(c *gin.Context) {
+	_, _, err := util.ValidateLimitAndSkip(c)
+	if err != nil {
+		c.Error(err)
+		c.JSON(types.HTTP_BAD, c.Errors.JSON())
+
+		return
+	}
+
 	sql := haikusSQL.ListAllHaikus()
 
 	conn := getPostgresConn()
@@ -107,11 +118,6 @@ func getHaikuById(c *gin.Context) {
 	})
 }
 
-type HaikuPUT struct {
-	Text string `json:"text" binding:"required"`
-	Tags string `json:"tags"`
-}
-
 func putHaiku(c *gin.Context) {
 	conn := getPostgresConn()
 	defer conn.Close(ctx.Background())
@@ -131,7 +137,7 @@ func putHaiku(c *gin.Context) {
 		return
 	}
 
-	var body HaikuPUT
+	var body types.HaikuPUT
 	err = c.ShouldBindBodyWithJSON(&body)
 	if err != nil {
 		c.JSON(types.HTTP_BAD, gin.H{"response": err})
@@ -216,14 +222,8 @@ func getPostgresConn() *pgx.Conn {
 	return conn
 }
 
-type RegisterAuthorPOST struct {
-	Username string `json:"username" binding:"required"`
-	Password string `json:"password" binding:"required"`
-	Email    string `json:"email" binding:"required"`
-}
-
 func registerAuthor(c *gin.Context) {
-	var body RegisterAuthorPOST
+	var body types.RegisterAuthorPOST
 
 	err := c.ShouldBindBodyWithJSON(&body)
 	if err != nil {
