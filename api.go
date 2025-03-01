@@ -3,7 +3,6 @@ package main
 import (
 	ctx "context"
 	"fmt"
-	"log"
 	"net/mail"
 	"os"
 	"reflect"
@@ -18,18 +17,10 @@ import (
 	"regexp"
 
 	"github.com/gin-gonic/gin"
-	"github.com/joho/godotenv"
 	"github.com/matthewhartstonge/argon2"
 )
 
 func main() {
-	envLoadErr := godotenv.Load("./.env")
-	if envLoadErr != nil {
-		log.Fatal("Error loading .env file")
-
-		return
-	}
-
 	r := gin.Default()
 
 	r.POST("/allHaikus", listAllHaikus)
