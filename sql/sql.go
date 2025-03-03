@@ -1,9 +1,34 @@
-package haikusSQL
+package sql
+
+func CreateAuthorsTable() string {
+	return `
+CREATE TABLE IF NOT EXISTS authors(
+	"ID" integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+	username text NOT NULL,
+	password bytea NOT NULL,
+	email text NOT NULL,
+	created timestamp without time zone NOT NULL,
+	CONSTRAINT email_unique UNIQUE (email),
+	CONSTRAINT username_unique UNIQUE (username)
+)`
+}
+
+func CreateHaikusTable() string {
+	return `
+CREATE TABLE IF NOT EXISTS haikus(
+	"ID" integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+	text text NOT NULL,
+	tags text NOT NULL,
+	rating integer NOT NULL,
+	created timestamp without time zone NOT NULL,
+	authorid integer references authors("ID")
+)`
+}
 
 func InsertHaiku() string {
 	return `
 INSERT INTO public.haikus
-VALUES (default, $1, $2, $3, $4, now())
+VALUES (default, $1, $2, $3, now(), $4)
 RETURNING *`
 }
 

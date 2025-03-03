@@ -4,13 +4,13 @@ import (
 	ctx "context"
 	"encoding/base64"
 	"fmt"
+	"log"
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	"github.com/jackc/pgx/v5"
-
 	"github.com/matthewhartstonge/argon2"
-	haikusSQL "haikuhub.net/haikuhubapi/sql"
+	"haikuhub.net/haikuhubapi/db"
+	"haikuhub.net/haikuhubapi/sql"
 	"haikuhub.net/haikuhubapi/types"
 )
 
@@ -20,29 +20,31 @@ type ValidateAuthHeaderResponse struct {
 }
 
 /*
-Using the supplied Base64-encoded Authorization header, verify that the "username:password"
+Using the supplied Authorization header, verify that the "username:password"
 encoded string matches an existing Author's credentials. If so, return the Author.
+
+Typically formatted: "Basic dXNlcm5hbWU6cGFzc3dvcmQ=" -> "Basic username:password"
 
 If not, return empty Author struct.
 */
-func GetAuthorByAuthHeader(c *gin.Context, conn *pgx.Conn) (types.Author, error) {
+func GetAuthorByAuthHeader(c *gin.Context) (types.Author, error) {
 	authHeaderRaw := c.GetHeader("Authorization")
-	decoded, err := base64.StdEncoding.DecodeString(authHeaderRaw)
+	encodedCredentials := strings.Split(authHeaderRaw, " ")[1]
+
+	decoded, err := base64.StdEncoding.DecodeString(encodedCredentials)
 	if err != nil {
 		return types.Author{}, fmt.Errorf("cannot decode Authorization header: %s", err.Error())
 	}
 
-	authHeaderDecoded := string(decoded)
-
-	usernamePassword := strings.Split(authHeaderDecoded, " ")[1]
-	slices := strings.Split(usernamePassword, ":")
+	decodedCredentials := string(decoded)
+	slices := strings.Split(decodedCredentials, ":")
 	username := slices[0]
 	password := slices[1]
 
-	sql := haikusSQL.GetAuthorByUsername()
+	sql := sql.GetAuthorByUsername()
 
 	author := types.Author{}
-	row := conn.QueryRow(ctx.Background(), sql, username)
+	row := db.Pool.QueryRow(ctx.Background(), sql, username)
 
 	err = row.Scan(
 		&author.ID,
@@ -52,12 +54,12 @@ func GetAuthorByAuthHeader(c *gin.Context, conn *pgx.Conn) (types.Author, error)
 		&author.Created,
 	)
 	if err != nil {
-		return types.Author{}, fmt.Errorf("cannot read row: %s", err.Error())
+		log.Printf("error while scanning Row: %s", err.Error())
 	}
 
 	match, err := argon2.VerifyEncoded([]byte(password), author.Password)
 	if err != nil {
-		return types.Author{}, fmt.Errorf("cannot verify password: %s", err.Error())
+		log.Printf("cannot verify password: %s", err.Error())
 	}
 
 	if match {

@@ -23,8 +23,8 @@ type Haiku struct {
 }
 
 type ListHaikusPOST struct {
-	Limit int `json:"limit" binding:"required"`
-	Skip  int `json:"skip" binding:"required"`
+	Limit int `json:"limit"`
+	Skip  int `json:"skip"`
 }
 
 type RegisterAuthorPOST struct {
@@ -40,5 +40,6 @@ type HaikuPUT struct {
 
 const HTTP_OK = http.StatusOK
 const HTTP_BAD = http.StatusBadRequest
+const HTTP_NOTFOUND = http.StatusNotFound
 const HTTP_UNAUTHORIZED = http.StatusUnauthorized
 const HTTP_INTERNAL = http.StatusInternalServerError

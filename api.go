@@ -3,33 +3,53 @@ package main
 import (
 	ctx "context"
 	"fmt"
+	"log"
 	"net/mail"
-	"os"
 	"reflect"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
-	auth "haikuhub.net/haikuhubapi/auth"
-	haikusSQL "haikuhub.net/haikuhubapi/sql"
+	"haikuhub.net/haikuhubapi/auth"
+	"haikuhub.net/haikuhubapi/db"
+	"haikuhub.net/haikuhubapi/sql"
 	"haikuhub.net/haikuhubapi/types"
 	"haikuhub.net/haikuhubapi/util"
 
-	"regexp"
+	"github.com/joho/godotenv"
 
 	"github.com/gin-gonic/gin"
 	"github.com/matthewhartstonge/argon2"
 )
 
 func main() {
+	envLoadErr := godotenv.Load()
+	if envLoadErr != nil {
+		log.Fatal("Error loading env file")
+	}
+
+	db.InitializeTables()
+
 	r := gin.Default()
+	r.HandleMethodNotAllowed = true
 
 	r.POST("/allHaikus", listAllHaikus)
 	r.GET("/haiku/:id", getHaikuById)
 	r.PUT("/haiku", putHaiku)
 	r.DELETE("/haiku/:id", deleteHaikuById)
 
-	r.POST("/registerAuthor", registerAuthor)
-	// r.POST("/login", auth.Login)
+	r.PUT("/author", registerAuthor)
+
+	r.GET("/haiku", func(c *gin.Context) {
+		c.AbortWithStatusJSON(types.HTTP_BAD, gin.H{
+			"error": "haiku id parameter required: GET https://haikuhub.net/haikus/121",
+		})
+	})
+
+	r.DELETE("/haiku", func(c *gin.Context) {
+		c.AbortWithStatusJSON(types.HTTP_BAD, gin.H{
+			"error": "haiku id parameter required: DELETE https://haikuhub.net/haikus/121",
+		})
+	})
 
 	r.Run()
 }
@@ -45,24 +65,28 @@ func listAllHaikus(c *gin.Context) {
 		return
 	}
 
-	sql := haikusSQL.ListAllHaikus()
+	sql := sql.ListAllHaikus()
 
-	conn := getPostgresConn()
-	defer conn.Close(ctx.Background())
-
-	rows, err := conn.Query(ctx.Background(), sql, limit, skip)
+	rows, err := db.Pool.Query(ctx.Background(), sql, limit, skip)
 	if err != nil {
-		fmt.Println("list all failed", err)
-		return
+		util.LogAndAbortRequest(
+			c,
+			err,
+			"list all haikus failed",
+			"unable to list haikus",
+			types.HTTP_INTERNAL,
+		)
 	}
 
 	haikus, err := pgx.CollectRows(rows, pgx.RowToStructByName[types.Haiku])
 	if err != nil {
-		c.JSON(types.HTTP_INTERNAL, gin.H{
-			"error": err.Error(),
-		})
-
-		return
+		util.LogAndAbortRequest(
+			c,
+			err,
+			"list all failed",
+			"unable to read DB haikus response",
+			types.HTTP_INTERNAL,
+		)
 	}
 
 	c.JSON(types.HTTP_OK, gin.H{
@@ -73,12 +97,9 @@ func listAllHaikus(c *gin.Context) {
 func getHaikuById(c *gin.Context) {
 	haikuId := c.Param("id")
 
-	sql := haikusSQL.GetHaikuById()
+	sql := sql.GetHaikuById()
 
-	conn := getPostgresConn()
-	defer conn.Close(ctx.Background())
-
-	row := conn.QueryRow(ctx.Background(), sql, haikuId)
+	row := db.Pool.QueryRow(ctx.Background(), sql, haikuId)
 
 	haiku := types.Haiku{}
 	err := row.Scan(
@@ -91,17 +112,17 @@ func getHaikuById(c *gin.Context) {
 	)
 
 	if err != nil {
-		errMessage := err.Error()
+		errMessage := "unable to find haiku"
 
 		if err.Error() == "no rows in result set" {
 			errMessage = "haiku not found!"
+		} else {
+			log.Println(errMessage, err.Error())
 		}
 
-		c.JSON(types.HTTP_BAD, gin.H{
+		c.AbortWithStatusJSON(types.HTTP_NOTFOUND, gin.H{
 			"error": errMessage,
 		})
-
-		return
 	}
 
 	c.JSON(types.HTTP_OK, gin.H{
@@ -110,35 +131,32 @@ func getHaikuById(c *gin.Context) {
 }
 
 func putHaiku(c *gin.Context) {
-	conn := getPostgresConn()
-	defer conn.Close(ctx.Background())
+	author, err := auth.GetAuthorByAuthHeader(c)
+	if reflect.ValueOf(author).IsZero() {
+		var errorMessage string = "unauthorized"
+		if err != nil {
+			errorMessage = err.Error()
+		}
 
-	author, err := auth.GetAuthorByAuthHeader(c, conn)
-	if reflect.ValueOf(author).IsZero() && err == nil {
-		c.JSON(types.HTTP_UNAUTHORIZED, gin.H{
-			"message": "unauthorized",
+		c.AbortWithStatusJSON(types.HTTP_UNAUTHORIZED, gin.H{
+			"error": errorMessage,
 		})
-
-		return
-	} else if err != nil {
-		c.JSON(types.HTTP_INTERNAL, gin.H{
-			"error": fmt.Sprintf("something bad happened: %s", err.Error()),
-		})
-
-		return
 	}
 
 	var body types.HaikuPUT
-	err = c.ShouldBindBodyWithJSON(&body)
+	err = c.BindJSON(&body)
 	if err != nil {
-		c.JSON(types.HTTP_BAD, gin.H{"response": err})
+		errors := strings.Split(c.Errors.Errors()[0], "\n")
+		transformedErrors := util.GetTransformedErrorStrings(errors)
 
-		return
+		c.AbortWithStatusJSON(types.HTTP_BAD, gin.H{
+			"errors": transformedErrors,
+		})
 	}
 
-	sql := haikusSQL.InsertHaiku()
+	sql := sql.InsertHaiku()
 
-	row := conn.QueryRow(ctx.Background(), sql, body.Text, body.Tags, 0, "the-authors-id")
+	row := db.Pool.QueryRow(ctx.Background(), sql, body.Text, body.Tags, 0, "the-authors-id")
 	insertedHaiku := types.Haiku{}
 
 	insertErr := row.Scan(
@@ -151,11 +169,9 @@ func putHaiku(c *gin.Context) {
 	)
 
 	if insertErr != nil {
-		c.JSON(types.HTTP_INTERNAL, gin.H{
+		c.AbortWithStatusJSON(types.HTTP_INTERNAL, gin.H{
 			"error": insertErr.Error(),
 		})
-
-		return
 	}
 
 	c.JSON(types.HTTP_OK, gin.H{
@@ -164,37 +180,35 @@ func putHaiku(c *gin.Context) {
 }
 
 func deleteHaikuById(c *gin.Context) {
-	conn := getPostgresConn()
-	defer conn.Close(ctx.Background())
+	author, err := auth.GetAuthorByAuthHeader(c)
+	if reflect.ValueOf(author).IsZero() {
+		var errorMessage string = "unauthorized"
+		if err != nil {
+			errorMessage = err.Error()
+		}
 
-	author, err := auth.GetAuthorByAuthHeader(c, conn)
-	if reflect.ValueOf(author).IsZero() && err == nil {
-		c.JSON(types.HTTP_UNAUTHORIZED, gin.H{
-			"message": "unauthorized",
+		c.AbortWithStatusJSON(types.HTTP_UNAUTHORIZED, gin.H{
+			"error": errorMessage,
 		})
-
-		return
-	} else if err != nil {
-		c.JSON(types.HTTP_INTERNAL, gin.H{
-			"error": fmt.Sprintf("something bad happened: %s", err.Error()),
-		})
-
-		return
 	}
 
 	haikuId := c.Param("id")
 
-	sql := haikusSQL.DeleteHaikuById()
+	sql := sql.DeleteHaikuById()
 
-	cmd, err := conn.Exec(ctx.Background(), sql, haikuId, author.ID)
+	cmd, err := db.Pool.Exec(ctx.Background(), sql, haikuId, author.ID)
 	if err != nil {
-		c.JSON(types.HTTP_INTERNAL, gin.H{
-			"error": fmt.Sprintf("unable to delete haiku: %s", err.Error()),
-		})
+		util.LogAndAbortRequest(
+			c,
+			err,
+			"unable to delete haiku",
+			"unable to delete haiku",
+			types.HTTP_INTERNAL,
+		)
 	}
 
 	if cmd.RowsAffected() == 0 {
-		c.JSON(types.HTTP_BAD, gin.H{
+		c.AbortWithStatusJSON(types.HTTP_BAD, gin.H{
 			"error": fmt.Sprintf("Haiku with ID '%s' not found", haikuId),
 		})
 	}
@@ -202,73 +216,54 @@ func deleteHaikuById(c *gin.Context) {
 	c.Status(types.HTTP_OK)
 }
 
-func getPostgresConn() *pgx.Conn {
-	databaseUrl := os.Getenv("DATABASE_URL")
-	conn, err := pgx.Connect(ctx.Background(), databaseUrl)
-	if err != nil {
-		fmt.Println("FDSAA")
-	}
-
-	return conn
-}
-
 func registerAuthor(c *gin.Context) {
 	var body types.RegisterAuthorPOST
 
-	err := c.ShouldBindBodyWithJSON(&body)
+	err := c.BindJSON(&body)
 	if err != nil {
-		c.JSON(types.HTTP_BAD, gin.H{
-			"response": err,
-		})
+		errors := strings.Split(c.Errors.Errors()[0], "\n")
 
-		return
+		transformedErrors := util.GetTransformedErrorStrings(errors)
+
+		c.AbortWithStatusJSON(types.HTTP_BAD, gin.H{
+			"errors": transformedErrors,
+		})
 	}
 
 	email, err := mail.ParseAddress(body.Email)
 	if err != nil {
-		c.JSON(types.HTTP_BAD, gin.H{
-			"error": "Invalid email address!",
+		c.AbortWithStatusJSON(types.HTTP_BAD, gin.H{
+			"error": "request body field 'email' must be a standard email address",
 		})
-
-		return
 	}
-
-	conn := getPostgresConn()
-	defer conn.Close(ctx.Background())
 
 	argon := argon2.DefaultConfig()
 	encoded, err := argon.HashEncoded([]byte(body.Password))
 	if err != nil {
-		c.JSON(types.HTTP_INTERNAL, gin.H{
+		c.AbortWithStatusJSON(types.HTTP_INTERNAL, gin.H{
 			"error": err.Error(),
 		})
-
-		return
 	}
 
-	sql := haikusSQL.InsertAuthor()
+	sql := sql.InsertAuthor()
 
-	_, err = conn.Exec(ctx.Background(), sql, body.Username, encoded, email.Address)
+	_, err = db.Pool.Exec(ctx.Background(), sql, body.Username, encoded, email.Address)
 	if err != nil {
-		if strings.Contains(err.Error(), "duplicate key value violates unique constraint") {
-			errorRegex := regexp.MustCompile(`"(.{1,})_unique"`)
-			uniqueField := errorRegex.FindStringSubmatch(err.Error())[1]
+		errString := err.Error()
 
-			c.JSON(types.HTTP_BAD, gin.H{
-				"error": fmt.Sprintf("%s already taken!", uniqueField),
+		if util.GetFailedDuplicateCheck(errString) {
+			c.AbortWithStatusJSON(types.HTTP_BAD, gin.H{
+				"error": util.GetDuplicateUniqueColumnErrorString(errString),
 			})
 		} else {
-			c.JSON(types.HTTP_INTERNAL, gin.H{
+			c.AbortWithStatusJSON(types.HTTP_INTERNAL, gin.H{
 				"error": err.Error(),
 			})
 		}
-
-		return
 	}
 
 	c.JSON(types.HTTP_OK, gin.H{
-		"username":        body.Username,
-		"email":           email.Address,
-		"encodedPassword": string(encoded),
+		"username": body.Username,
+		"email":    email.Address,
 	})
 }
