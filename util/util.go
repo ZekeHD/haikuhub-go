@@ -7,15 +7,20 @@ import (
 	"regexp"
 	"strings"
 
+	goaway "github.com/TwiN/go-away"
 	"github.com/gin-gonic/gin"
-	"haikuhub.net/haikuhubapi/types"
 )
 
 const maxLimit int = 100
 const maxSkip int = 100000
 
+type ListHaikusPOST struct {
+	Limit int `json:"limit"`
+	Skip  int `json:"skip"`
+}
+
 func ValidateLimitAndSkip(c *gin.Context) (int, int, error) {
-	var body types.ListHaikusPOST
+	var body ListHaikusPOST
 
 	err := c.ShouldBindBodyWithJSON(&body)
 	if err != nil {
@@ -70,26 +75,26 @@ func GetDuplicateUniqueColumnErrorString(errString string) string {
 func GetTransformedErrorStrings(errStrings []string) []string {
 	transformedErrorStrings := []string{}
 
-	for _, err := range errStrings {
+	for _, errString := range errStrings {
 		var transformed string
 
-		if GetFailedRequiredCheck(err) {
-			transformed = GetRequiredFieldErrorString(err)
-		} else if GetFailedDuplicateCheck(err) {
-			transformed = GetDuplicateUniqueColumnErrorString(err)
+		if GetFailedRequiredCheck(errString) {
+			transformed = GetRequiredFieldErrorString(errString)
+		} else if GetFailedDuplicateCheck(errString) {
+			transformed = GetDuplicateUniqueColumnErrorString(errString)
 		}
 
 		if len(transformed) > 0 {
 			transformedErrorStrings = append(transformedErrorStrings, transformed)
 		}
 
-		log.Println(err)
+		log.Println(errString)
 	}
 
 	return transformedErrorStrings
 }
 
-func LogAndAbortRequest(
+func LogErrorAndSetErrorResponse(
 	c *gin.Context,
 	err error,
 	logMessagePrefix string,
@@ -98,7 +103,11 @@ func LogAndAbortRequest(
 ) {
 	log.Println(logMessagePrefix, err.Error())
 
-	c.AbortWithStatusJSON(httpStatusCode, gin.H{
+	c.JSON(httpStatusCode, gin.H{
 		"error": responseMessage,
 	})
+}
+
+func IsProfane(str string) bool {
+	return goaway.IsProfane(str)
 }

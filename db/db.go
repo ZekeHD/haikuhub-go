@@ -37,6 +37,11 @@ func InitializeTables() {
 	if err != nil {
 		log.Fatal("Unable to create 'haikus' table!", err.Error())
 	}
+
+	_, err = Pool.Exec(ctx.Background(), sql.CreateVotesTable())
+	if err != nil {
+		log.Fatal("Unable to create 'votes' table!", err.Error())
+	}
 }
 
 var Pool = getConnectionPool()

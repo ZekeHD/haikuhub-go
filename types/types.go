@@ -6,7 +6,7 @@ import (
 )
 
 type Author struct {
-	ID       string
+	ID       int
 	Username string
 	Password []byte
 	Email    string
@@ -14,17 +14,20 @@ type Author struct {
 }
 
 type Haiku struct {
-	ID       string
+	ID       int
 	Text     string
-	Created  time.Time
-	Rating   int16
 	Tags     string
-	AuthorID string
+	Rating   int16
+	Created  time.Time
+	AuthorID int
 }
 
-type ListHaikusPOST struct {
-	Limit int `json:"limit"`
-	Skip  int `json:"skip"`
+type Vote struct {
+	ID             int
+	Upvoted        bool
+	VotedTimestamp time.Time
+	AuthorID       int
+	HaikuID        int
 }
 
 type RegisterAuthorPOST struct {
@@ -33,12 +36,8 @@ type RegisterAuthorPOST struct {
 	Email    string `json:"email" binding:"required"`
 }
 
-type HaikuPUT struct {
-	Text string `json:"text" binding:"required"`
-	Tags string `json:"tags"`
-}
-
 const HTTP_OK = http.StatusOK
+const HTTP_OK_NOCONTENT = http.StatusNoContent
 const HTTP_BAD = http.StatusBadRequest
 const HTTP_NOTFOUND = http.StatusNotFound
 const HTTP_UNAUTHORIZED = http.StatusUnauthorized
