@@ -29,6 +29,10 @@ If not, return empty Author struct.
 */
 func GetAuthorByAuthHeader(c *gin.Context) (types.Author, error) {
 	authHeaderRaw := c.GetHeader("Authorization")
+	if len(authHeaderRaw) == 0 {
+		return types.Author{}, nil
+	}
+
 	encodedCredentials := strings.Split(authHeaderRaw, " ")[1]
 
 	decoded, err := base64.StdEncoding.DecodeString(encodedCredentials)
@@ -52,6 +56,7 @@ func GetAuthorByAuthHeader(c *gin.Context) (types.Author, error) {
 		&author.Password,
 		&author.Email,
 		&author.Created,
+		&author.FavoriteHaikus,
 	)
 	if err != nil {
 		log.Printf("error while scanning Row: %s", err.Error())

@@ -12,13 +12,12 @@ import (
 )
 
 func getConnectionPool() *pgxpool.Pool {
-	envLoadErr := godotenv.Load()
+	envLoadErr := godotenv.Load("../.env")
 	if envLoadErr != nil {
-		log.Fatal("Error loading env file")
+		log.Fatal("Error loading env file", envLoadErr.Error())
 	}
 
 	databaseUrl := os.Getenv("DATABASE_URL")
-
 	pool, err := pgxpool.New(ctx.Background(), databaseUrl)
 	if err != nil {
 		log.Fatal("unable to get Postgres pool", err.Error())
@@ -41,6 +40,13 @@ func InitializeTables() {
 	_, err = Pool.Exec(ctx.Background(), sql.CreateVotesTable())
 	if err != nil {
 		log.Fatal("Unable to create 'votes' table!", err.Error())
+	}
+}
+
+func DropTestTables() {
+	_, err := Pool.Exec(ctx.Background(), sql.DropAllTestTables())
+	if err != nil {
+		log.Fatal("Unable to drop test tables!", err.Error())
 	}
 }
 

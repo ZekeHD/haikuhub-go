@@ -1,32 +1,21 @@
-package main
+package api
 
 import (
-	"log"
-
 	"github.com/gin-gonic/gin"
-	"github.com/joho/godotenv"
 
 	"haikuhub.net/haikuhubapi/authors"
-	"haikuhub.net/haikuhubapi/db"
 	"haikuhub.net/haikuhubapi/haikus"
 	"haikuhub.net/haikuhubapi/types"
 	"haikuhub.net/haikuhubapi/votes"
 )
 
-func main() {
-	envLoadErr := godotenv.Load()
-	if envLoadErr != nil {
-		log.Fatal("Error loading env file")
-	}
-
-	db.InitializeTables()
-
+func GetRouter() *gin.Engine {
 	r := gin.Default()
 	r.HandleMethodNotAllowed = true
 
 	r.PUT("/haiku", haikus.PutHaiku)
 	r.GET("/haiku/:id", haikus.GetHaikuById)
-	r.POST("/allHaikus", haikus.ListAllHaikus)
+	r.POST("/listHaikus", haikus.ListAllHaikus)
 	r.DELETE("/haiku/:id", haikus.DeleteHaikuById)
 
 	r.PUT("/author", authors.RegisterAuthor)
@@ -45,5 +34,5 @@ func main() {
 		})
 	})
 
-	r.Run()
+	return r
 }

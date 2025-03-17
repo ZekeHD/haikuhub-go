@@ -1,53 +1,86 @@
 package util
 
 import (
+	"errors"
 	"fmt"
 	"log"
-	"reflect"
+	"maps"
 	"regexp"
+	"slices"
 	"strings"
 
 	goaway "github.com/TwiN/go-away"
 	"github.com/gin-gonic/gin"
+	"github.com/mtso/syllables"
+
+	"haikuhub.net/haikuhubapi/types"
 )
 
 const maxLimit int = 100
 const maxSkip int = 100000
 
-type ListHaikusPOST struct {
-	Limit int `json:"limit"`
-	Skip  int `json:"skip"`
+const FIVE int = 5
+const SEVEN int = 7
+
+var syllablesAllowedByPhraseIndex = map[int]int{
+	0: 5,
+	1: 7,
+	2: 5,
 }
 
-func ValidateLimitAndSkip(c *gin.Context) (int, int, error) {
-	var body ListHaikusPOST
+var ListHaikuFiltersWhitelist = map[string]map[string]bool{
+	"authorId": {
+		types.EQ:  true,
+		types.NEQ: true,
+		types.IN:  true,
+		types.NIN: true,
+	},
+	"text": {
+		types.CO:  true,
+		types.NCO: true,
+	},
+	"created": {
+		types.LT: true,
+		types.GT: true,
+	},
+	"tags": {
+		types.IN:  true,
+		types.NIN: true,
+	},
+}
 
-	err := c.ShouldBindBodyWithJSON(&body)
+func getBlankFilters() types.Filters {
+	return types.Filters{}
+}
+
+func ParseListPOSTBody(c *gin.Context) (int, int, types.Filters, error) {
+	var body types.ListHaikusPOST
+
+	err := c.BindJSON(&body)
 	if err != nil {
-		//
+		return 0, 0, getBlankFilters(), err
 	}
 
-	limitValid := reflect.TypeOf(body.Limit).Kind() == reflect.Int &&
-		body.Limit >= 0 &&
-		body.Limit <= maxLimit
-
+	limitValid := body.Limit >= 0 && body.Limit <= maxLimit
 	if !limitValid {
-		err := fmt.Errorf("'limit' value needs to be number & below %d", maxLimit)
+		err := fmt.Errorf("'limit' value needs to be number between 0 - %d", maxLimit)
 
-		return 0, 0, err
+		return 0, 0, getBlankFilters(), err
 	}
 
-	skipValid := reflect.TypeOf(body.Skip).Kind() == reflect.Int &&
-		body.Skip >= 0 &&
-		body.Skip <= maxSkip
-
+	skipValid := body.Skip >= 0 && body.Skip <= maxSkip
 	if !skipValid {
-		err := fmt.Errorf("'skip' value needs to be number & below %d", maxSkip)
+		err := fmt.Errorf("'skip' value needs to be number between 0 - %d", maxSkip)
 
-		return 0, 0, err
+		return 0, 0, getBlankFilters(), err
 	}
 
-	return body.Limit, body.Skip, nil
+	invalidFiltersMessage := validateFilters(body.Filters)
+	if len(invalidFiltersMessage) != 0 {
+		return 0, 0, getBlankFilters(), errors.New(invalidFiltersMessage)
+	}
+
+	return body.Limit, body.Skip, body.Filters, nil
 }
 
 func GetFailedRequiredCheck(errString string) bool {
@@ -65,6 +98,26 @@ func GetFailedDuplicateCheck(errString string) bool {
 	return strings.Contains(errString, "duplicate key value violates unique constraint")
 }
 
+func GetFailedFieldUnmarshal(errString string) bool {
+	return strings.Contains(errString, "json: cannot unmarshal")
+}
+
+func GetFailedFieldUnmarshalErrorString(errString string) string {
+	errorRegex := regexp.MustCompile(`cannot unmarshal .* into Go struct field .*\.(.{1,}) of type (.{1,})`)
+	matches := errorRegex.FindStringSubmatch(errString)
+	field := matches[1]
+
+	if field == "filters" {
+		return fmt.Sprintf("field '%s' should adhere to a 'field: { <operator>: <value> }' format", field)
+	}
+
+	correctType := matches[2]
+
+	transformedErrorString := fmt.Sprintf("field '%s' requires '%s' value type", field, correctType)
+
+	return transformedErrorString
+}
+
 func GetDuplicateUniqueColumnErrorString(errString string) string {
 	errorRegex := regexp.MustCompile(`"(.{1,})_unique"`)
 	uniqueField := errorRegex.FindStringSubmatch(errString)[1]
@@ -76,17 +129,17 @@ func GetTransformedErrorStrings(errStrings []string) []string {
 	transformedErrorStrings := []string{}
 
 	for _, errString := range errStrings {
-		var transformed string
+		transformed := errString
 
 		if GetFailedRequiredCheck(errString) {
 			transformed = GetRequiredFieldErrorString(errString)
 		} else if GetFailedDuplicateCheck(errString) {
 			transformed = GetDuplicateUniqueColumnErrorString(errString)
+		} else if GetFailedFieldUnmarshal(errString) {
+			transformed = GetFailedFieldUnmarshalErrorString(errString)
 		}
 
-		if len(transformed) > 0 {
-			transformedErrorStrings = append(transformedErrorStrings, transformed)
-		}
+		transformedErrorStrings = append(transformedErrorStrings, transformed)
 
 		log.Println(errString)
 	}
@@ -110,4 +163,62 @@ func LogErrorAndSetErrorResponse(
 
 func IsProfane(str string) bool {
 	return goaway.IsProfane(str)
+}
+
+func validateFilters(filters types.Filters) string {
+	for field, expression := range filters {
+		allowedOperators := ListHaikuFiltersWhitelist[field]
+
+		if len(allowedOperators) == 0 {
+			return fmt.Sprintf("invalid field '%s'", field)
+		}
+
+		operator := slices.Collect(maps.Keys(expression))[0]
+		if !allowedOperators[operator] {
+			return fmt.Sprintf("invalid operator '%s' for field '%s'", operator, field)
+		}
+	}
+
+	return ""
+}
+
+func getPhraseInvalidMsg(phrase string, allowedSyllables int) string {
+	f := syllables.In("we are alone here")
+	fmt.Println("SYLLABLES", f)
+
+	syllablesCount := syllables.In(phrase)
+	if syllablesCount != allowedSyllables {
+		fmt.Printf("phrase: '%s'\n", phrase)
+		fmt.Println("syllablesCount:", syllablesCount)
+		fmt.Println("allowed syllables:", allowedSyllables)
+
+		return fmt.Sprintf("phrase '%s' needs to be %d syllables", phrase, allowedSyllables)
+	}
+
+	whitespaceRegex := regexp.MustCompile(`^[^\s].+[^\s]$`)
+	surroundingWhitespaces := !whitespaceRegex.Match([]byte(phrase))
+	if surroundingWhitespaces {
+		return fmt.Sprintf("remove all surrounding whitespace characters from phrase '%s'", phrase)
+	}
+
+	return ""
+}
+
+func ValidateHaiku(haiku string) string {
+	phrases := strings.Split(haiku, "//")
+
+	if len(phrases) != 3 {
+		return "haiku must be in 5, 7, 5 syllable format, with each phrase separated by '//' characters"
+	}
+
+	for i, phrase := range phrases {
+		allowedSyllables := syllablesAllowedByPhraseIndex[i]
+		phraseInvalidMsg := getPhraseInvalidMsg(phrase, allowedSyllables)
+
+		if len(phraseInvalidMsg) != 0 {
+			return phraseInvalidMsg
+		}
+	}
+
+	return ""
 }

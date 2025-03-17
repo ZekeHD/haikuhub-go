@@ -2,6 +2,7 @@ package authors
 
 import (
 	ctx "context"
+	"log"
 	"net/mail"
 	"regexp"
 	"strings"
@@ -54,12 +55,10 @@ func RegisterAuthor(c *gin.Context) {
 		return
 	}
 
-	var emailAddress string = ""
+	var emailAddress string
 
 	if len(body.Email) > 0 {
 		address, err := mail.ParseAddress(body.Email)
-		emailAddress = address.Address
-
 		if err != nil {
 			c.JSON(types.HTTP_BAD, gin.H{
 				"error": "request body field 'email' must be a standard email address",
@@ -67,6 +66,8 @@ func RegisterAuthor(c *gin.Context) {
 
 			return
 		}
+
+		emailAddress = address.Address
 	}
 
 	passwordInvalidErr := passwordvalidator.Validate(body.Password, MIN_PW_ENTROPHY)
@@ -103,8 +104,10 @@ func RegisterAuthor(c *gin.Context) {
 				"error": util.GetDuplicateUniqueColumnErrorString(errString),
 			})
 		} else {
+			log.Println("unable to save Author", err.Error())
+
 			c.JSON(types.HTTP_INTERNAL, gin.H{
-				"error": err.Error(),
+				"error": "unable to save Author. Please contact sitemaster for help.",
 			})
 		}
 

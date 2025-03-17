@@ -2,12 +2,10 @@ package votes
 
 import (
 	ctx "context"
-	"reflect"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 
-	"haikuhub.net/haikuhubapi/auth"
 	"haikuhub.net/haikuhubapi/db"
 	"haikuhub.net/haikuhubapi/sql"
 	"haikuhub.net/haikuhubapi/types"
@@ -20,22 +18,22 @@ type VotePOST struct {
 }
 
 func PostVote(c *gin.Context) {
-	author, err := auth.GetAuthorByAuthHeader(c)
-	if reflect.ValueOf(author).IsZero() {
-		var errorMessage string = "unauthorized"
-		if err != nil {
-			errorMessage = err.Error()
-		}
+	// author, err := auth.GetAuthorByAuthHeader(c)
+	// if reflect.ValueOf(author).IsZero() {
+	// 	var errorMessage string = "unauthorized"
+	// 	if err != nil {
+	// 		errorMessage = err.Error()
+	// 	}
 
-		c.JSON(types.HTTP_UNAUTHORIZED, gin.H{
-			"error": errorMessage,
-		})
+	// 	c.JSON(types.HTTP_UNAUTHORIZED, gin.H{
+	// 		"error": errorMessage,
+	// 	})
 
-		return
-	}
+	// 	return
+	// }
 
 	var body VotePOST
-	err = c.BindJSON(&body)
+	err := c.BindJSON(&body)
 	if err != nil {
 		errors := strings.Split(c.Errors.Errors()[0], "\n")
 		transformedErrors := util.GetTransformedErrorStrings(errors)
@@ -49,7 +47,7 @@ func PostVote(c *gin.Context) {
 
 	getVoteSQL := sql.GetVoteByHaikuAndAuthor()
 
-	voteRow := db.Pool.QueryRow(ctx.Background(), getVoteSQL, author.ID, body.HaikuId)
+	voteRow := db.Pool.QueryRow(ctx.Background(), getVoteSQL, "", body.HaikuId)
 	vote := types.Vote{}
 
 	getVoteErr := voteRow.Scan(
@@ -94,7 +92,7 @@ func PostVote(c *gin.Context) {
 
 		sql := sql.UpsertVote()
 
-		row := db.Pool.QueryRow(ctx.Background(), sql, body.Direction, author.ID, body.HaikuId)
+		row := db.Pool.QueryRow(ctx.Background(), sql, body.Direction, "", body.HaikuId)
 		upsertedVote := types.Vote{}
 
 		upsertErr := row.Scan(

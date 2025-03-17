@@ -1,0 +1,26 @@
+name: Functional Tests
+
+on: [push]
+
+jobs:
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.20'
+
+      - name: Install dependencies
+        run: go get .
+      - name: Install Ginkgo
+        run: |
+          go install github.com/onsi/ginkgo/v2
+          export PATH=$PATH:$(go env GOPATH)/bin
+      - name: Build
+        run: go build
+      - name: Run Tests
+        run: ginkgo -v ./test

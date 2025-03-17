@@ -18,17 +18,21 @@ import (
 )
 
 type HaikuPUT struct {
-	Text string `json:"text" binding:"required"`
-	Tags string `json:"tags"`
+	Text string   `json:"text" binding:"required"`
+	Tags []string `json:"tags"`
 }
 
 // TODO: go back thru and refactor all error responses to use c.Error, like below?
 
 func ListAllHaikus(c *gin.Context) {
-	limit, skip, err := util.ValidateLimitAndSkip(c)
+	limit, skip, _, err := util.ParseListPOSTBody(c)
 	if err != nil {
-		c.Error(err)
-		c.JSON(types.HTTP_BAD, c.Errors.JSON())
+		errors := strings.Split(err.Error(), "\n")
+		transformedErrors := util.GetTransformedErrorStrings(errors)
+
+		c.JSON(types.HTTP_BAD, gin.H{
+			"errors": transformedErrors,
+		})
 
 		return
 	}
@@ -131,6 +135,17 @@ func PutHaiku(c *gin.Context) {
 
 		return
 	}
+
+	haikuInvalidMsg := util.ValidateHaiku(body.Text)
+	if len(haikuInvalidMsg) != 0 {
+		c.JSON(types.HTTP_BAD, gin.H{
+			"error": haikuInvalidMsg,
+		})
+
+		return
+	}
+
+	// TODO: "tags" field whitelisting
 
 	sql := sql.InsertHaiku()
 
