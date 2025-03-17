@@ -1,6 +1,6 @@
 module haikuhub.net/haikuhubapi
 
-go 1.24.0
+go 1.24
 
 require (
 	github.com/TwiN/go-away v1.6.15
