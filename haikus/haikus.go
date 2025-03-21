@@ -149,7 +149,12 @@ func PutHaiku(c *gin.Context) {
 
 	sql := sql.InsertHaiku()
 
-	row := db.Pool.QueryRow(ctx.Background(), sql, body.Text, body.Tags, 0, author.ID)
+	tags := []string{}
+	if len(body.Tags) != 0 {
+		tags = body.Tags
+	}
+
+	row := db.Pool.QueryRow(ctx.Background(), sql, body.Text, tags, 0, author.ID)
 	insertedHaiku := types.Haiku{}
 
 	insertErr := row.Scan(

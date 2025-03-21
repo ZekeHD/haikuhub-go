@@ -1,6 +1,7 @@
 package util
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log"
@@ -11,8 +12,9 @@ import (
 
 	goaway "github.com/TwiN/go-away"
 	"github.com/gin-gonic/gin"
-	"github.com/mtso/syllables"
 
+	"haikuhub.net/haikuhubapi/internal"
+	"haikuhub.net/haikuhubapi/proto"
 	"haikuhub.net/haikuhubapi/types"
 )
 
@@ -22,7 +24,7 @@ const maxSkip int = 100000
 const FIVE int = 5
 const SEVEN int = 7
 
-var syllablesAllowedByPhraseIndex = map[int]int{
+var syllablesAllowedByPhraseIndex = map[int]int32{
 	0: 5,
 	1: 7,
 	2: 5,
@@ -182,23 +184,19 @@ func validateFilters(filters types.Filters) string {
 	return ""
 }
 
-func getPhraseInvalidMsg(phrase string, allowedSyllables int) string {
-	f := syllables.In("we are alone here")
-	fmt.Println("SYLLABLES", f)
-
-	syllablesCount := syllables.In(phrase)
-	if syllablesCount != allowedSyllables {
-		fmt.Printf("phrase: '%s'\n", phrase)
-		fmt.Println("syllablesCount:", syllablesCount)
-		fmt.Println("allowed syllables:", allowedSyllables)
-
-		return fmt.Sprintf("phrase '%s' needs to be %d syllables", phrase, allowedSyllables)
-	}
-
+func getPhraseInvalidMsg(phrase string, allowedSyllables int32) string {
 	whitespaceRegex := regexp.MustCompile(`^[^\s].+[^\s]$`)
 	surroundingWhitespaces := !whitespaceRegex.Match([]byte(phrase))
 	if surroundingWhitespaces {
 		return fmt.Sprintf("remove all surrounding whitespace characters from phrase '%s'", phrase)
+	}
+
+	client := proto.NewSyllablesServiceClient(internal.GrpcClientConn)
+	rpcResp, _ := client.GetSyllables(context.Background(), &proto.GetSyllablesRequest{Input: phrase})
+	syllablesCount := rpcResp.SyllablesCount
+
+	if syllablesCount != allowedSyllables {
+		return fmt.Sprintf("phrase '%s' needs to be %d syllables, detected %d", phrase, allowedSyllables, syllablesCount)
 	}
 
 	return ""

@@ -277,5 +277,5 @@ func TestHaikus(t *testing.T) {
 	RegisterFailHandler(Fail)
 	RunSpecs(t, "Haikus Suite")
 
-	// black sky trembles//the oceans turn into dust//we are alone here
+	//a blackened sky wails//the oceans turn into dust//we are alone here
 }

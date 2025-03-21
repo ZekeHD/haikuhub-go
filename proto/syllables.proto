@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+option go_package="github.com/ZekeHD/haikuhub-go/proto";
+
+package syllables;
+
+service SyllablesService {
+  rpc GetSyllables(GetSyllablesRequest) returns (Syllables);
+}
+
+message GetSyllablesRequest {
+  string input = 1;
+}
+
+message Syllables {
+  int32 syllablesCount = 1;
+}
